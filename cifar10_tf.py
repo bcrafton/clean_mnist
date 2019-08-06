@@ -1,5 +1,4 @@
 
-
 import numpy as np
 import tensorflow as tf
 import keras
@@ -23,12 +22,17 @@ y = tf.placeholder(tf.float32, [None, 10])
 
 ####################################
 
-w1 = tf.get_variable("w1", [3,3,3,96], dtype=tf.float32)
-w2 = tf.get_variable("w2", [3,3,96,128], dtype=tf.float32)
-w3 = tf.get_variable("w3", [3,3,128,256], dtype=tf.float32)
+f0 = 3
+f1 = 64
+f2 = 96
+f3 = 128
 
-pred_weights = tf.get_variable("pred_weights", [4*4*256,10], dtype=tf.float32)
-pred_bias = tf.get_variable("pred_bias", [10], dtype=tf.float32)
+w1 = tf.get_variable("w1", [3,3,f0,f1], dtype=tf.float32)
+w2 = tf.get_variable("w2", [3,3,f1,f2], dtype=tf.float32)
+w3 = tf.get_variable("w3", [3,3,f2,f3], dtype=tf.float32)
+
+fc1 = tf.get_variable("fc1", [4*4*f3,10], dtype=tf.float32)
+fc1_bias = tf.get_variable("fc1_bias", [10], dtype=tf.float32)
 
 ####################################
 
@@ -47,8 +51,8 @@ bn3   = tf.layers.batch_normalization(inputs=conv3)
 relu3 = tf.nn.relu(bn3)
 pool3 = tf.nn.avg_pool(relu3, ksize=[1,2,2,1], strides=[1,2,2,1], padding='SAME')
 
-pred_view = tf.reshape(pool3, [-1, 4*4*256])
-pred = tf.matmul(pred_view, pred_weights) + pred_bias
+pred_view = tf.reshape(pool3, [-1, 4*4*f3])
+pred = tf.matmul(pred_view, fc1) + fc1_bias
 
 ####################################
 
@@ -60,7 +64,7 @@ loss = tf.nn.softmax_cross_entropy_with_logits_v2(labels=y, logits=pred)
 params = tf.trainable_variables()
 grads = tf.gradients(loss, params)
 grads_and_vars = zip(grads, params)
-train = tf.train.AdamOptimizer(learning_rate=1e-2, epsilon=1e-1).apply_gradients(grads_and_vars)
+train = tf.train.AdamOptimizer(learning_rate=1e-2, epsilon=1.).apply_gradients(grads_and_vars)
 
 ####################################
 
