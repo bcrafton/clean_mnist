@@ -23,31 +23,31 @@ y = tf.placeholder(tf.float32, [None, 10])
 
 ####################################
 
-conv1_weights = tf.get_variable("conv1_weights", [3,3,3,96], dtype=tf.float32)
-conv2_weights = tf.get_variable("conv2_weights", [3,3,96,128], dtype=tf.float32)
-conv3_weights = tf.get_variable("conv3_weights", [3,3,128,256], dtype=tf.float32)
+w1 = tf.get_variable("w1", [3,3,3,96], dtype=tf.float32)
+w2 = tf.get_variable("w2", [3,3,96,128], dtype=tf.float32)
+w3 = tf.get_variable("w3", [3,3,128,256], dtype=tf.float32)
 
 pred_weights = tf.get_variable("pred_weights", [4*4*256,10], dtype=tf.float32)
 pred_bias = tf.get_variable("pred_bias", [10], dtype=tf.float32)
 
 ####################################
 
-conv1      = tf.nn.conv2d(x, conv1_weights, [1,1,1,1], 'SAME')
-bn1        = tf.layers.batch_normalization(inputs=conv1)
-relu1      = tf.nn.relu(bn1)
-conv1_pool = tf.nn.avg_pool(relu1, ksize=[1,2,2,1], strides=[1,2,2,1], padding='SAME')
+conv1 = tf.nn.conv2d(x, w1, [1,1,1,1], 'SAME')
+bn1   = tf.layers.batch_normalization(inputs=conv1)
+relu1 = tf.nn.relu(bn1)
+pool1 = tf.nn.avg_pool(relu1, ksize=[1,2,2,1], strides=[1,2,2,1], padding='SAME')
 
-conv2      = tf.nn.conv2d(conv1_pool, conv2_weights, [1,1,1,1], 'SAME')
-bn2        = tf.layers.batch_normalization(inputs=conv2)
-relu2      = tf.nn.relu(bn2)
-conv2_pool = tf.nn.avg_pool(relu2, ksize=[1,2,2,1], strides=[1,2,2,1], padding='SAME')
+conv2 = tf.nn.conv2d(pool1, w2, [1,1,1,1], 'SAME')
+bn2   = tf.layers.batch_normalization(inputs=conv2)
+relu2 = tf.nn.relu(bn2)
+pool2 = tf.nn.avg_pool(relu2, ksize=[1,2,2,1], strides=[1,2,2,1], padding='SAME')
 
-conv3      = tf.nn.conv2d(conv2_pool, conv3_weights, [1,1,1,1], 'SAME')
-bn3        = tf.layers.batch_normalization(inputs=conv3)
-relu3      = tf.nn.relu(bn3)
-conv3_pool = tf.nn.avg_pool(relu3, ksize=[1,2,2,1], strides=[1,2,2,1], padding='SAME')
+conv3 = tf.nn.conv2d(pool2, w3, [1,1,1,1], 'SAME')
+bn3   = tf.layers.batch_normalization(inputs=conv3)
+relu3 = tf.nn.relu(bn3)
+pool3 = tf.nn.avg_pool(relu3, ksize=[1,2,2,1], strides=[1,2,2,1], padding='SAME')
 
-pred_view = tf.reshape(conv3_pool, [-1, 4*4*256])
+pred_view = tf.reshape(pool3, [-1, 4*4*256])
 pred = tf.matmul(pred_view, pred_weights) + pred_bias
 
 ####################################
