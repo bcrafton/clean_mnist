@@ -51,16 +51,16 @@ bn3   = tf.layers.batch_normalization(inputs=conv3)
 relu3 = tf.nn.relu(bn3)
 pool3 = tf.nn.avg_pool(relu3, ksize=[1,2,2,1], strides=[1,2,2,1], padding='SAME')
 
-pred_view = tf.reshape(pool3, [-1, 4*4*f3])
-pred = tf.matmul(pred_view, fc1) + fc1_bias
+flat = tf.reshape(pool3, [-1, 4*4*f3])
+fc1 = tf.matmul(flat, fc1) + fc1_bias
 
 ####################################
 
-predict = tf.argmax(pred, axis=1)
+predict = tf.argmax(fc1, axis=1)
 correct = tf.equal(predict, tf.argmax(y, 1))
 sum_correct = tf.reduce_sum(tf.cast(correct, tf.float32))
 
-loss = tf.nn.softmax_cross_entropy_with_logits_v2(labels=y, logits=pred)
+loss = tf.nn.softmax_cross_entropy_with_logits_v2(labels=y, logits=fc1)
 params = tf.trainable_variables()
 grads = tf.gradients(loss, params)
 grads_and_vars = zip(grads, params)
