@@ -17,6 +17,8 @@ y_test = keras.utils.to_categorical(y_test, 10)
 
 ####################################
 
+epochs = 10
+batch_size = 50
 x = tf.placeholder(tf.float32, [None, 32 , 32 , 3])
 y = tf.placeholder(tf.float32, [None, 10])
 
@@ -71,19 +73,19 @@ train = tf.train.AdamOptimizer(learning_rate=1e-2, epsilon=1.).apply_gradients(g
 sess = tf.InteractiveSession()
 tf.global_variables_initializer().run()
 
-for ii in range(10):
-    for jj in range(0, 50000, 50):
+for ii in range(epochs):
+    for jj in range(0, 50000, batch_size):
         s = jj
-        e = jj + 50
+        e = jj + batch_size
         xs = x_train[s:e]
         ys = y_train[s:e]
         sess.run([train], feed_dict={x: xs, y: ys})
         
     total_correct = 0
 
-    for jj in range(0, 10000, 50):
+    for jj in range(0, 10000, batch_size):
         s = jj
-        e = jj + 50
+        e = jj + batch_size
         xs = x_test[s:e]
         ys = y_test[s:e]
         _sum_correct = sess.run(sum_correct, feed_dict={x: xs, y: ys})
