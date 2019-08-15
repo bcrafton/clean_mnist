@@ -35,6 +35,8 @@ import tensorflow as tf
 import numpy as np
 np.set_printoptions(threshold=1000)
 
+from keras.layers import DepthwiseConv2D, Conv2D, BatchNormalization, AveragePooling2D, Dense, Flatten, ReLU, Softmax
+
 ##############################################
 
 IMAGENET_MEAN = [123.68, 116.78, 103.94]
@@ -202,49 +204,68 @@ val_iterator = val_dataset.make_initializable_iterator()
 
 ###############################################################
 
-def block(x, f, p):
-    conv = tf.layers.conv2d(inputs=x, filters=filter_size, kernel_size=[3, 3], strides=[1, 1], padding='same', use_bias=False)
-    bn   = tf.layers.batch_normalization(conv)
-    relu = tf.nn.relu(bn)
+# keras.layers.Conv2D(filters, kernel_size, strides=(1, 1), padding='valid', data_format=None, dilation_rate=(1, 1), activation=None, use_bias=True, ...)
+# keras.layers.DepthwiseConv2D(kernel_size, strides=(1, 1), padding='valid', depth_multiplier=1, data_format=None, activation=None, use_bias=True, ...)
+# keras.layers.BatchNormalization(axis=-1, momentum=0.99, epsilon=0.001, ...)
+# keras.layers.Dense(units, activation=None, use_bias=True, ...)
+# keras.layers.Flatten(data_format=None)
+# keras.layers.AveragePooling2D(pool_size=(2, 2), strides=None, padding='valid', data_format=None)
+# keras.layers.ReLU(max_value=None, negative_slope=0.0, threshold=0.0)
+# keras.layers.Softmax(axis=-1)
 
-    if p > 1:
-        pool = tf.nn.avg_pool(relu, ksize=[1,p,p,1], strides=[1,p,p,1], padding='SAME')
-        return pool
-    else:
-        return relu
+def block(x, f, s):
+    conv1 = Conv2D(filters=f, kernel_size=[3, 3], strides=[s, s], padding='same', use_bias=False)(x)
+    bn1   = BatchNormalization()(conv1)
+    relu1 = ReLU()(bn1)
+
+    return relu1
+
+def mobile_block(x, f1, f2, s):
+    conv1 = DepthwiseConv2D(   kernel_size=[3, 3], strides=[s, s], padding='same', use_bias=False)(x)
+    bn1   = BatchNormalization()(conv1)
+    relu1 = ReLU()(bn1)
+
+    conv2 = Conv2D(filters=f2, kernel_size=[1, 1], strides=[1, 1], padding='same', use_bias=False)(relu1)
+    bn2   = BatchNormalization()(conv2)
+    relu2 = ReLU()(bn2)
+
+    return relu2
 
 ###############################################################
 
 batch_size = tf.placeholder(tf.int32, shape=())
 lr = tf.placeholder(tf.float32, shape=())
 
-bn     = tf.layers.batch_normalization(features) # 224
+bn     = BatchNormalization()(features)        # 224
+block1 = block(bn,              32,         2) # 224
 
-block1 = block(bn, 64, 1)                        # 224
-block2 = block(block1, 64, 2)                    # 224
+block2 = mobile_block(block1,   32,   64,   1) # 112
+block3 = mobile_block(block2,   64,   128,  2) # 112
 
-block3 = block(block2, 128, 1)                   # 112
-block4 = block(block3, 128, 2)                   # 112
+block4 = mobile_block(block3,   128,  128,  1) # 56
+block5 = mobile_block(block4,   128,  256,  2) # 56
 
-block5 = block(block4, 256, 1)                   # 56
-block6 = block(block5, 256, 2)                   # 56
+block6 = mobile_block(block5,   256,  256,  1) # 28
+block7 = mobile_block(block6,   256,  512,  2) # 28
 
-block7 = block(block6, 256, 1)                   # 28
-block8 = block(block7, 256, 2)                   # 28
+block8  = mobile_block(block7,  512,  512,  1) # 14
+block9  = mobile_block(block8,  512,  512,  1) # 14
+block10 = mobile_block(block9,  512,  512,  1) # 14
+block11 = mobile_block(block10, 512,  512,  1) # 14
+block12 = mobile_block(block11, 512,  512,  1) # 14
 
-block9 = block(block8, 512, 1)                   # 14
-block10 = block(block9, 512, 2)                  # 14
+block13 = mobile_block(block12, 512,  1024, 2) # 14
+block14 = mobile_block(block13, 1024, 1024, 1) # 7
 
-block11 = block(block10, 1024, 1)                # 7
-
-pool   = tf.nn.avg_pool(block11, ksize=[1,7,7,1], strides=[1,7,7,1], padding='SAME')
-flat   = tf.contrib.layers.flatten(pool)
-fc1    = tf.layers.dense(inputs=flat, units=1000)
+pool    = AveragePooling2D(pool_size=[7,7], padding='same')(block14)
+flat    = Flatten()(pool)
+fc1     = Dense(units=1000)(flat)
+predict = Softmax()(fc1)
 
 ###############################################################
 
 loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits_v2(logits=fc1, labels=labels))
-correct = tf.equal(tf.argmax(fc1, axis=1), tf.argmax(labels, 1))
+correct = tf.equal(tf.argmax(predict, axis=1), tf.argmax(labels, 1))
 total_correct = tf.reduce_sum(tf.cast(correct, tf.float32))
 train = tf.train.AdamOptimizer(learning_rate=lr, epsilon=args.eps).minimize(loss)
 
@@ -321,5 +342,4 @@ for ii in range(args.epochs):
     
     
     
-
 
