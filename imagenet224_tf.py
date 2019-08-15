@@ -203,7 +203,7 @@ val_iterator = val_dataset.make_initializable_iterator()
 ###############################################################
 
 def block(x, f, p):
-    conv = tf.layers.conv2d(inputs=x, filters=filter_size, kernel_size=[3, 3], strides=[1, 1], padding='same', use_bias=False)
+    conv = tf.layers.conv2d(inputs=x, filters=f, kernel_size=[3, 3], strides=[1, 1], padding='same', use_bias=False)
     bn   = tf.layers.batch_normalization(conv)
     relu = tf.nn.relu(bn)
 
@@ -243,7 +243,7 @@ fc1    = tf.layers.dense(inputs=flat, units=1000)
 
 ###############################################################
 
-loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits_v2(logits=fc1, labels=labels))
+loss = tf.nn.softmax_cross_entropy_with_logits_v2(logits=fc1, labels=labels) / args.batch_size
 correct = tf.equal(tf.argmax(fc1, axis=1), tf.argmax(labels, 1))
 total_correct = tf.reduce_sum(tf.cast(correct, tf.float32))
 train = tf.train.AdamOptimizer(learning_rate=lr, epsilon=args.eps).minimize(loss)
