@@ -35,6 +35,8 @@ import tensorflow as tf
 import numpy as np
 np.set_printoptions(threshold=1000)
 
+from keras.layers import DepthwiseConv2D, Conv2D, BatchNormalization, Dense, Flatten, ReLU, Softmax
+
 ##############################################
 
 # IMAGENET_MEAN = [123.68, 116.78, 103.94]
@@ -201,7 +203,7 @@ train_iterator = train_dataset.make_initializable_iterator()
 val_iterator = val_dataset.make_initializable_iterator()
 
 ###############################################################
-
+'''
 def block(x, filter_size, pool_size):
     conv1 = tf.layers.conv2d(inputs=x, filters=filter_size, kernel_size=[3, 3], strides=[1, 1], padding='same', use_bias=False)
     bn1   = tf.layers.batch_normalization(conv1)
@@ -223,20 +225,52 @@ def mobile_block(x, filter_size, pool_size):
     relu2 = tf.nn.relu(bn2)
 
     return relu2
+'''
+
+# keras.layers.Conv2D(filters, kernel_size, strides=(1, 1), padding='valid', data_format=None, dilation_rate=(1, 1), activation=None, use_bias=True, ...)
+# keras.layers.DepthwiseConv2D(kernel_size, strides=(1, 1), padding='valid', depth_multiplier=1, data_format=None, activation=None, use_bias=True, ...)
+# keras.layers.BatchNormalization(axis=-1, momentum=0.99, epsilon=0.001, ...)
+# keras.layers.Dense(units, activation=None, use_bias=True, ...)
+# keras.layers.Flatten(data_format=None)
+
+# keras.layers.ReLU(max_value=None, negative_slope=0.0, threshold=0.0)
+# keras.layers.Softmax(axis=-1)
+
+def block(x, f, s):
+    conv1 = Conv2D(filters=f, kernel_size=[3, 3], strides=[1, 1], padding='same', use_bias=False)(x)
+    bn1   = BatchNormalization()(conv1)
+    relu1 = ReLU()(bn1)
+
+    conv2 = Conv2D(filters=f, kernel_size=[3, 3], strides=[s, s], padding='same', use_bias=False)(relu1)
+    bn2   = BatchNormalization()(conv2)
+    relu2 = ReLU()(bn2)
+
+    return relu2
+
+def mobile_block(x, f1, f2, s):
+    conv1 = DepthwiseConv2D(filters=f1, kernel_size=[3, 3], strides=[1, 1], padding='same', use_bias=False)(x)
+    bn1   = BatchNormalization()(conv1)
+    relu1 = ReLU()(bn1)
+
+    conv2 = Conv2D(         filters=f1, kernel_size=[1, 1], strides=[1, 1], padding='same', use_bias=False)(relu1)
+    bn2   = BatchNormalization()(conv2)
+    relu2 = ReLU()(bn2)
+
+    return relu2
 
 ###############################################################
 
 batch_size = tf.placeholder(tf.int32, shape=())
 lr = tf.placeholder(tf.float32, shape=())
 
-bn     = tf.layers.batch_normalization(features) # 224
-block1 = block(bn,             32,  2)       # 224
-block2 = mobile_block(block1,  64,  2)       # 112
-block3 = mobile_block(block2, 128,  2)       # 56
-block4 = mobile_block(block3, 256,  2)       # 28
-block5 = mobile_block(block4, 512,  1)       # 14
-block6 = mobile_block(block5, 512,  1)       # 14
-block7 = mobile_block(block6, 1024, 2)       # 7
+bn     = BatchNormalization()(features)     # 224
+block1 = block(bn,             32,  2)      # 224
+block2 = mobile_block(block1,  32,  64,   2) # 112
+block3 = mobile_block(block2,  64,  128,  2) # 56
+block4 = mobile_block(block3, 128,  256,  2) # 28
+block5 = mobile_block(block4, 256,  512,  1) # 14
+block6 = mobile_block(block5, 512,  512,  1) # 14
+block7 = mobile_block(block6, 512,  1024, 2) # 7
 
 pool   = tf.nn.avg_pool(block7, ksize=[1,7,7,1], strides=[1,7,7,1], padding='SAME')
 flat   = tf.contrib.layers.flatten(pool)
