@@ -165,9 +165,6 @@ def get_train_dataset():
 filename = tf.placeholder(tf.string, shape=[None])
 label = tf.placeholder(tf.int64, shape=[None])
 
-batch_size = tf.placeholder(tf.int32, shape=())
-lr = tf.placeholder(tf.float32, shape=())
-
 ###############################################################
 
 val_imgs, val_labs = get_validation_dataset()
@@ -176,7 +173,7 @@ val_dataset = tf.data.Dataset.from_tensor_slices((filename, label))
 val_dataset = val_dataset.shuffle(len(val_imgs))
 val_dataset = val_dataset.map(parse_function, num_parallel_calls=4)
 val_dataset = val_dataset.map(val_preprocess, num_parallel_calls=4)
-val_dataset = val_dataset.batch(batch_size)
+val_dataset = val_dataset.batch(args.batch_size)
 val_dataset = val_dataset.repeat()
 val_dataset = val_dataset.prefetch(8)
 
@@ -188,7 +185,7 @@ train_dataset = tf.data.Dataset.from_tensor_slices((filename, label))
 train_dataset = train_dataset.shuffle(len(train_imgs))
 train_dataset = train_dataset.map(parse_function, num_parallel_calls=4)
 train_dataset = train_dataset.map(train_preprocess, num_parallel_calls=4)
-train_dataset = train_dataset.batch(batch_size)
+train_dataset = train_dataset.batch(args.batch_size)
 train_dataset = train_dataset.repeat()
 train_dataset = train_dataset.prefetch(8)
 
@@ -214,7 +211,7 @@ def block(x, filter_size, pool_size):
     bn2   = tf.layers.batch_normalization(conv2)
     relu2 = tf.nn.relu(bn2)
 
-    return pool
+    return relu2
 
 def mobile_block(x, filter_size, pool_size):
     conv1 = tf.layers.separable_conv2d(inputs=x, filters=filter_size, kernel_size=[3, 3], strides=[1, 1], padding='same')
@@ -225,9 +222,12 @@ def mobile_block(x, filter_size, pool_size):
     bn2   = tf.layers.batch_normalization(conv2)
     relu2 = tf.nn.relu(bn2)
 
-    return pool
+    return relu2
 
 ###############################################################
+
+batch_size = tf.placeholder(tf.int32, shape=())
+lr = tf.placeholder(tf.float32, shape=())
 
 bn = tf.layers.batch_normalization(features)
 block1 = block(bn,             32,  2)
@@ -245,8 +245,7 @@ fc1 = tf.layers.dense(inputs=flat, units=1000)
 loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits_v2(logits=fc1, labels=labels))
 correct = tf.equal(tf.argmax(fc1, axis=1), tf.argmax(labels, 1))
 total_correct = tf.reduce_sum(tf.cast(correct, tf.float32))
-
-train = tf.train.AdamOptimizer(learning_rate=learning_rate, epsilon=args.eps).minimize(loss)
+train = tf.train.AdamOptimizer(learning_rate=lr, epsilon=args.eps).minimize(loss)
 
 ###############################################################
 
@@ -266,15 +265,15 @@ for ii in range(args.epochs):
 
     ##################################################################
 
-    sess.run(train_iterator.initializer, feed_dict={filename: train_filenames})
+    sess.run(train_iterator.initializer, feed_dict={filename: train_imgs, label: train_labs})
 
     train_total = 0.0
     train_correct = 0.0
     train_acc = 0.0
 
-    for jj in range(0, len(train_filenames), args.batch_size):
+    for jj in range(0, len(train_imgs), args.batch_size):
 
-        [_total_correct, _] = sess.run([total_correct, train], feed_dict={handle: train_handle, learning_rate: args.lr})
+        [_total_correct, _] = sess.run([total_correct, train], feed_dict={handle: train_handle, batch_size: args.batch_size, lr: args.lr})
 
         train_total += args.batch_size
         train_correct += _total_correct
@@ -286,15 +285,15 @@ for ii in range(args.epochs):
 
     ##################################################################
 
-    sess.run(val_iterator.initializer, feed_dict={filename: val_filenames})
+    sess.run(val_iterator.initializer, feed_dict={filename: val_imgs, label: val_labs})
 
     val_total = 0.0
     val_correct = 0.0
     val_acc = 0.0
 
-    for jj in range(0, len(val_filenames), args.batch_size):
+    for jj in range(0, len(val_imgs), args.batch_size):
 
-        [_total_correct] = sess.run([total_correct], feed_dict={handle: val_handle, learning_rate: 0.0})
+        [_total_correct] = sess.run([total_correct], feed_dict={handle: val_handle, batch_size: args.batch_size, lr: 0.0})
 
         val_total += args.batch_size
         val_correct += _total_correct
