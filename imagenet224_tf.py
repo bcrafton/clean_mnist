@@ -7,7 +7,7 @@ import sys
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--epochs', type=int, default=10)
-parser.add_argument('--batch_size', type=int, default=64)
+parser.add_argument('--batch_size', type=int, default=32)
 parser.add_argument('--lr', type=float, default=5e-2)
 parser.add_argument('--eps', type=float, default=1.)
 parser.add_argument('--gpu', type=int, default=0)
@@ -229,7 +229,7 @@ def mobile_block(x, f1, f2, s):
     bn1   = BatchNormalization()(conv1)
     relu1 = ReLU()(bn1)
 
-    conv2 = Conv2D(filters=f1, kernel_size=[1, 1], strides=[1, 1], padding='same', use_bias=False)(relu1)
+    conv2 = Conv2D(filters=f2, kernel_size=[1, 1], strides=[1, 1], padding='same', use_bias=False)(relu1)
     bn2   = BatchNormalization()(conv2)
     relu2 = ReLU()(bn2)
 
