@@ -39,7 +39,7 @@ from keras.layers import DepthwiseConv2D, Conv2D, BatchNormalization, AveragePoo
 
 ##############################################
 
-# IMAGENET_MEAN = [123.68, 116.78, 103.94]
+IMAGENET_MEAN = [123.68, 116.78, 103.94]
 
 ##############################################
 
@@ -87,12 +87,11 @@ def train_preprocess(image, label):
     crop_image = tf.random_crop(image, [224, 224, 3])                       # (3)
     flip_image = tf.image.random_flip_left_right(crop_image)                # (4)
 
-    # means = tf.reshape(tf.constant(IMAGENET_MEAN), [1, 1, 3])
-    # centered_image = flip_image - means                                     # (5)
+    means = tf.reshape(tf.constant(IMAGENET_MEAN), [1, 1, 3])
+    centered_image = flip_image - means                                     # (5)
 
-    return crop_image, label
+    return centered_image, label
     
-
 # Preprocessing (for validation)
 # (3) Take a central 224x224 crop to the scaled image
 # (4) Substract the per color mean `IMAGENET_MEAN`
@@ -100,10 +99,10 @@ def train_preprocess(image, label):
 def val_preprocess(image, label):
     crop_image = tf.image.resize_image_with_crop_or_pad(image, 224, 224)    # (3)
 
-    # means = tf.reshape(tf.constant(IMAGENET_MEAN), [1, 1, 3])
-    # centered_image = crop_image - means                                     # (4)
+    means = tf.reshape(tf.constant(IMAGENET_MEAN), [1, 1, 3])
+    centered_image = crop_image - means                                     # (4)
 
-    return crop_image, label
+    return centered_image, label
 
 ##############################################
 
@@ -177,7 +176,7 @@ val_dataset = val_dataset.map(parse_function, num_parallel_calls=4)
 val_dataset = val_dataset.map(val_preprocess, num_parallel_calls=4)
 val_dataset = val_dataset.batch(args.batch_size)
 val_dataset = val_dataset.repeat()
-val_dataset = val_dataset.prefetch(8)
+val_dataset = val_dataset.prefetch(2)
 
 ###############################################################
 
@@ -189,7 +188,7 @@ train_dataset = train_dataset.map(parse_function, num_parallel_calls=4)
 train_dataset = train_dataset.map(train_preprocess, num_parallel_calls=4)
 train_dataset = train_dataset.batch(args.batch_size)
 train_dataset = train_dataset.repeat()
-train_dataset = train_dataset.prefetch(8)
+train_dataset = train_dataset.prefetch(2)
 
 ###############################################################
 
@@ -214,15 +213,11 @@ val_iterator = val_dataset.make_initializable_iterator()
 # keras.layers.Softmax(axis=-1)
 
 def block(x, f, s):
-    conv1 = Conv2D(filters=f, kernel_size=[3, 3], strides=[1, 1], padding='same', use_bias=False)(x)
+    conv1 = Conv2D(filters=f, kernel_size=[3, 3], strides=[s, s], padding='same', use_bias=False)(x)
     bn1   = BatchNormalization()(conv1)
     relu1 = ReLU()(bn1)
 
-    conv2 = Conv2D(filters=f, kernel_size=[3, 3], strides=[s, s], padding='same', use_bias=False)(relu1)
-    bn2   = BatchNormalization()(conv2)
-    relu2 = ReLU()(bn2)
-
-    return relu2
+    return relu1
 
 def mobile_block(x, f1, f2, s):
     conv1 = DepthwiseConv2D(   kernel_size=[3, 3], strides=[s, s], padding='same', use_bias=False)(x)
@@ -261,14 +256,15 @@ block12 = mobile_block(block11, 512,  512,  1) # 14
 block13 = mobile_block(block12, 512,  1024, 2) # 14
 block14 = mobile_block(block13, 1024, 1024, 1) # 7
 
-pool   = AveragePooling2D(pool_size=[7,7], padding='same')(block14)
-flat   = Flatten()(pool)
-fc1    = Dense(units=1000)(flat)
+pool    = AveragePooling2D(pool_size=[7,7], padding='same')(block14)
+flat    = Flatten()(pool)
+fc1     = Dense(units=1000)(flat)
+predict = Softmax()(fc1)
 
 ###############################################################
 
 loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits_v2(logits=fc1, labels=labels))
-correct = tf.equal(tf.argmax(fc1, axis=1), tf.argmax(labels, 1))
+correct = tf.equal(tf.argmax(predict, axis=1), tf.argmax(labels, 1))
 total_correct = tf.reduce_sum(tf.cast(correct, tf.float32))
 train = tf.train.AdamOptimizer(learning_rate=lr, epsilon=args.eps).minimize(loss)
 
