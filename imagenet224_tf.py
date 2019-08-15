@@ -8,7 +8,7 @@ import sys
 parser = argparse.ArgumentParser()
 parser.add_argument('--epochs', type=int, default=10)
 parser.add_argument('--batch_size', type=int, default=64)
-parser.add_argument('--lr', type=float, default=1e-2)
+parser.add_argument('--lr', type=float, default=5e-2)
 parser.add_argument('--eps', type=float, default=1.)
 parser.add_argument('--gpu', type=int, default=0)
 args = parser.parse_args()
@@ -37,7 +37,7 @@ np.set_printoptions(threshold=1000)
 
 ##############################################
 
-IMAGENET_MEAN = [123.68, 116.78, 103.94]
+# IMAGENET_MEAN = [123.68, 116.78, 103.94]
 
 ##############################################
 
@@ -85,10 +85,10 @@ def train_preprocess(image, label):
     crop_image = tf.random_crop(image, [224, 224, 3])                       # (3)
     flip_image = tf.image.random_flip_left_right(crop_image)                # (4)
 
-    means = tf.reshape(tf.constant(IMAGENET_MEAN), [1, 1, 3])
-    centered_image = flip_image - means                                     # (5)
+    # means = tf.reshape(tf.constant(IMAGENET_MEAN), [1, 1, 3])
+    # centered_image = flip_image - means                                     # (5)
 
-    return centered_image, label
+    return crop_image, label
     
 
 # Preprocessing (for validation)
@@ -98,10 +98,10 @@ def train_preprocess(image, label):
 def val_preprocess(image, label):
     crop_image = tf.image.resize_image_with_crop_or_pad(image, 224, 224)    # (3)
 
-    means = tf.reshape(tf.constant(IMAGENET_MEAN), [1, 1, 3])
-    centered_image = crop_image - means                                     # (4)
+    # means = tf.reshape(tf.constant(IMAGENET_MEAN), [1, 1, 3])
+    # centered_image = crop_image - means                                     # (4)
 
-    return centered_image, label
+    return crop_image, label
 
 ##############################################
 
@@ -203,22 +203,22 @@ val_iterator = val_dataset.make_initializable_iterator()
 ###############################################################
 
 def block(x, filter_size, pool_size):
-    conv1 = tf.layers.conv2d(inputs=x, filters=filter_size, kernel_size=[3, 3], strides=[1, 1], padding='same')
+    conv1 = tf.layers.conv2d(inputs=x, filters=filter_size, kernel_size=[3, 3], strides=[1, 1], padding='same', use_bias=False)
     bn1   = tf.layers.batch_normalization(conv1)
     relu1 = tf.nn.relu(bn1)
 
-    conv2 = tf.layers.conv2d(inputs=relu1, filters=filter_size, kernel_size=[3, 3], strides=[pool_size, pool_size], padding='same')
+    conv2 = tf.layers.conv2d(inputs=relu1, filters=filter_size, kernel_size=[3, 3], strides=[pool_size, pool_size], padding='same', use_bias=False)
     bn2   = tf.layers.batch_normalization(conv2)
     relu2 = tf.nn.relu(bn2)
 
     return relu2
 
 def mobile_block(x, filter_size, pool_size):
-    conv1 = tf.layers.separable_conv2d(inputs=x, filters=filter_size, kernel_size=[3, 3], strides=[1, 1], padding='same')
+    conv1 = tf.layers.separable_conv2d(inputs=x, filters=filter_size, kernel_size=[3, 3], strides=[1, 1], padding='same', use_bias=False)
     bn1   = tf.layers.batch_normalization(conv1)
     relu1 = tf.nn.relu(bn1)
 
-    conv2 = tf.layers.separable_conv2d(inputs=relu1, filters=filter_size, kernel_size=[3, 3], strides=[pool_size, pool_size], padding='same')
+    conv2 = tf.layers.separable_conv2d(inputs=relu1, filters=filter_size, kernel_size=[3, 3], strides=[pool_size, pool_size], padding='same', use_bias=False)
     bn2   = tf.layers.batch_normalization(conv2)
     relu2 = tf.nn.relu(bn2)
 
@@ -229,16 +229,18 @@ def mobile_block(x, filter_size, pool_size):
 batch_size = tf.placeholder(tf.int32, shape=())
 lr = tf.placeholder(tf.float32, shape=())
 
-bn = tf.layers.batch_normalization(features)
-block1 = block(bn,             32,  2)
-block2 = mobile_block(block1,  64,  2)
-block3 = mobile_block(block2, 128,  2)
-block4 = mobile_block(block3, 256,  2)
-block5 = mobile_block(block4, 512,  2)
-block6 = mobile_block(block5, 1024, 2)
+bn     = tf.layers.batch_normalization(features) # 224
+block1 = block(bn,             32,  2)       # 224
+block2 = mobile_block(block1,  64,  2)       # 112
+block3 = mobile_block(block2, 128,  2)       # 56
+block4 = mobile_block(block3, 256,  2)       # 28
+block5 = mobile_block(block4, 512,  1)       # 14
+block6 = mobile_block(block5, 512,  1)       # 14
+block7 = mobile_block(block6, 1024, 2)       # 7
 
-flat = tf.contrib.layers.flatten(block6)
-fc1 = tf.layers.dense(inputs=flat, units=1000)
+pool   = tf.nn.avg_pool(block7, ksize=[1,7,7,1], strides=[1,7,7,1], padding='SAME')
+flat   = tf.contrib.layers.flatten(pool)
+fc1    = tf.layers.dense(inputs=flat, units=1000)
 
 ###############################################################
 
@@ -246,6 +248,8 @@ loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits_v2(logits=fc1, lab
 correct = tf.equal(tf.argmax(fc1, axis=1), tf.argmax(labels, 1))
 total_correct = tf.reduce_sum(tf.cast(correct, tf.float32))
 train = tf.train.AdamOptimizer(learning_rate=lr, epsilon=args.eps).minimize(loss)
+
+params = tf.trainable_variables()
 
 ###############################################################
 
@@ -256,6 +260,15 @@ sess.run(tf.global_variables_initializer())
 
 train_handle = sess.run(train_iterator.string_handle())
 val_handle = sess.run(val_iterator.string_handle())
+
+###############################################################
+
+'''
+[params] = sess.run([params], feed_dict={})
+for p in params:
+    print (np.shape(p))
+assert (False)
+'''
 
 ###############################################################
 
