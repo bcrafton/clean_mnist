@@ -62,7 +62,6 @@ weights2 = np.random.uniform(low=-high, high=high, size=(LAYER2, LAYER3))
 #######################################
 
 for epoch in range(args.epochs):
-    print ("epoch: %d/%d" % (epoch, args.epochs))
     
     for ex in range(0, TRAIN_EXAMPLES, args.batch_size):
         start = ex 
@@ -82,8 +81,8 @@ for epoch in range(args.epochs):
         DW2 = np.dot(np.transpose(A2), D3)
         DW1 = np.dot(np.transpose(A1), D2)
         
-        weights2 = np.clip(weights2 - args.lr * DW2, -1e6, 1e6)
-        weights1 = np.clip(weights1 - args.lr * DW1, -1e6, 1e6)
+        weights2 = weights2 - args.lr * DW2
+        weights1 = weights1 - args.lr * DW1
         
     correct = 0
     for ex in range(0, TEST_EXAMPLES, args.batch_size):
@@ -101,7 +100,9 @@ for epoch in range(args.epochs):
         correct += np.sum(np.argmax(A3, axis=1) == np.argmax(labels, axis=1))
             
     test_acc = 1. * correct / TEST_EXAMPLES
-    print ("test acc: %f" % (test_acc))
+
+    print ("epoch: %d/%d | test acc: %f" % (epoch, args.epochs, test_acc))
+
     
     
     
