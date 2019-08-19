@@ -73,17 +73,18 @@ D2 = tf.matmul(D3, tf.transpose(weights2)) * drelu(A2)
 DW2 = tf.matmul(tf.transpose(A2), D3) 
 DW1 = tf.matmul(tf.transpose(A1), D2)  
 
-train2 = weights2.assign(weights2 - args.lr * DW2)
-train1 = weights1.assign(weights1 - args.lr * DW1)
+train2 = weights2 - args.lr * DW2
+train1 = weights1 - args.lr * DW1
 
 correct = tf.equal(tf.argmax(A3,1), tf.argmax(Y,1))
 total_correct = tf.reduce_sum(tf.cast(correct, tf.float32))
 
 #######################################
 
-sess = tf.InteractiveSession()
-tf.global_variables_initializer().run()
-tf.local_variables_initializer().run()
+config = tf.ConfigProto(allow_soft_placement=True)
+config.gpu_options.allow_growth=True
+sess = tf.Session(config=config)
+sess.run(tf.global_variables_initializer())
 
 #######################################
 

@@ -70,8 +70,12 @@ train = tf.train.AdamOptimizer(learning_rate=1e-2, epsilon=1.).apply_gradients(g
 
 ####################################
 
-sess = tf.InteractiveSession()
-tf.global_variables_initializer().run()
+config = tf.ConfigProto(allow_soft_placement=True)
+config.gpu_options.allow_growth=True
+sess = tf.Session(config=config)
+sess.run(tf.global_variables_initializer())
+
+####################################
 
 for ii in range(epochs):
     for jj in range(0, 50000, batch_size):
