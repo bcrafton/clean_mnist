@@ -17,7 +17,7 @@ if args.gpu >= 0:
     os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"
     os.environ["CUDA_VISIBLE_DEVICES"]=str(args.gpu)
 
-exxact = 1
+exxact = 0
 if exxact:
     val_path = '/home/bcrafton3/Data_SSD/ILSVRC2012/val/'
     train_path = '/home/bcrafton3/Data_SSD/ILSVRC2012/train/'
@@ -215,8 +215,8 @@ def block(x, f):
 
 
 def mobile_block(x, f1, f2, p):
-    filter1 = tf.Variable(init_filters(size=[3,3,f1,1], init='glorot_uniform'), dtype=tf.float32)
-    filter2 = tf.Variable(init_filters(size=[1,1,f1,f2], init='glorot_uniform'), dtype=tf.float32)
+    filter1 = tf.Variable(init_filters(size=[3,3,f1,1], init='alexnet'), dtype=tf.float32)
+    filter2 = tf.Variable(init_filters(size=[1,1,f1,f2], init='alexnet'), dtype=tf.float32)
 
     conv1 = tf.nn.depthwise_conv2d(x, filter1, [1,p,p,1], 'SAME')
     bn1   = tf.layers.batch_normalization(conv1)
@@ -263,6 +263,8 @@ correct = tf.equal(tf.argmax(fc1, axis=1), tf.argmax(labels, 1))
 total_correct = tf.reduce_sum(tf.cast(correct, tf.float32))
 train = tf.train.AdamOptimizer(learning_rate=lr, epsilon=args.eps).minimize(loss)
 
+params = tf.trainable_variables()
+
 ###############################################################
 
 config = tf.ConfigProto(allow_soft_placement=True)
@@ -272,6 +274,13 @@ sess.run(tf.global_variables_initializer())
 
 train_handle = sess.run(train_iterator.string_handle())
 val_handle = sess.run(val_iterator.string_handle())
+
+'''
+[params] = sess.run([params], feed_dict={})
+for p in params:
+    print (np.shape(p))
+assert (False)
+'''
 
 ###############################################################
 
