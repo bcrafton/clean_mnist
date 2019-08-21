@@ -8,7 +8,7 @@ import sys
 parser = argparse.ArgumentParser()
 parser.add_argument('--epochs', type=int, default=10)
 parser.add_argument('--batch_size', type=int, default=32)
-parser.add_argument('--lr', type=float, default=5e-2)
+parser.add_argument('--lr', type=float, default=2e-3)
 parser.add_argument('--eps', type=float, default=1.)
 parser.add_argument('--gpu', type=int, default=0)
 args = parser.parse_args()
@@ -39,6 +39,7 @@ from bc_utils.conv_utils import conv_output_length
 from bc_utils.conv_utils import conv_input_length
 
 from bc_utils.init_tensor import init_filters
+from bc_utils.init_tensor import init_matrix
 
 ##############################################
 
@@ -207,23 +208,31 @@ val_iterator = val_dataset.make_initializable_iterator()
 
 ###############################################################
 
-def block(x, f):
-    conv = tf.layers.conv2d(inputs=x, filters=f, kernel_size=[3, 3], strides=[1, 1], padding='same', use_bias=False)
-    bn   = tf.layers.batch_normalization(conv)
+def batch_norm(x, f):
+    gamma = tf.Variable(np.ones(shape=f), dtype=tf.float32)
+    beta = tf.Variable(np.zeros(shape=f), dtype=tf.float32)
+    mean = tf.reduce_mean(x, axis=[0,1,2])
+    _, var = tf.nn.moments(x - mean, axes=[0,1,2])
+    bn = tf.nn.batch_normalization(x=x, mean=mean, variance=var, offset=beta, scale=gamma, variance_epsilon=1e-3)
+    return bn
+
+def block(x, f1, f2, p):
+    filters = tf.Variable(init_filters(size=[3,3,f1,f2], init='alexnet'), dtype=tf.float32)
+    conv = tf.nn.conv2d(x, filters, [1,p,p,1], 'SAME')
+    bn   = batch_norm(conv, f2)
     relu = tf.nn.relu(bn)
     return relu
 
-
 def mobile_block(x, f1, f2, p):
-    filter1 = tf.Variable(init_filters(size=[3,3,f1,1], init='alexnet'), dtype=tf.float32)
-    filter2 = tf.Variable(init_filters(size=[1,1,f1,f2], init='alexnet'), dtype=tf.float32)
+    filters1 = tf.Variable(init_filters(size=[3,3,f1,1], init='alexnet'), dtype=tf.float32)
+    filters2 = tf.Variable(init_filters(size=[1,1,f1,f2], init='alexnet'), dtype=tf.float32)
 
-    conv1 = tf.nn.depthwise_conv2d(x, filter1, [1,p,p,1], 'SAME')
-    bn1   = tf.layers.batch_normalization(conv1)
+    conv1 = tf.nn.depthwise_conv2d(x, filters1, [1,p,p,1], 'SAME')
+    bn1   = batch_norm(conv1, f1)
     relu1 = tf.nn.relu(bn1)
 
-    conv2 = tf.nn.conv2d(relu1, filter2, [1,1,1,1], 'SAME')
-    bn2   = tf.layers.batch_normalization(conv2)
+    conv2 = tf.nn.conv2d(relu1, filters2, [1,1,1,1], 'SAME')
+    bn2   = batch_norm(conv2, f2)
     relu2 = tf.nn.relu(bn2)
 
     return relu2
@@ -233,28 +242,34 @@ def mobile_block(x, f1, f2, p):
 batch_size = tf.placeholder(tf.int32, shape=())
 lr = tf.placeholder(tf.float32, shape=())
 
-bn     = tf.layers.batch_normalization(features) # 224
+bn     = batch_norm(features, 3)                 # 224
 
-block1 = block(bn, 32)                           # 224
-block2 = mobile_block(block1, 32, 64, 2)         # 224
+block1 = block(bn, 3, 32, 2)                     # 224
 
-block3 = mobile_block(block2, 64, 128, 1)        # 112
-block4 = mobile_block(block3, 128, 128, 2)       # 112
+block2 = mobile_block(block1, 32, 64, 1)         # 112
+block3 = mobile_block(block2, 64, 128, 2)        # 112
 
-block5 = mobile_block(block4, 128, 256, 1)       # 56
-block6 = mobile_block(block5, 256, 256, 2)       # 56
+block4 = mobile_block(block3, 128, 128, 1)       # 56
+block5 = mobile_block(block4, 128, 256, 2)       # 56
 
-block7 = mobile_block(block6, 256, 256, 1)       # 28
-block8 = mobile_block(block7, 256, 256, 2)       # 28
+block6 = mobile_block(block5, 256, 256, 1)       # 28
+block7 = mobile_block(block6, 256, 512, 2)       # 28
 
-block9 = mobile_block(block8, 256, 512, 1)       # 14
-block10 = mobile_block(block9, 512, 512, 2)      # 14
+block8 = mobile_block(block7, 512, 512, 1)       # 14
+block9 = mobile_block(block8, 512, 512, 1)       # 14
+block10 = mobile_block(block9, 512, 512, 1)      # 14
+block11 = mobile_block(block10, 512, 512, 1)     # 14
+block12 = mobile_block(block11, 512, 512, 1)     # 14
 
-block11 = mobile_block(block10, 512, 1024, 1)    # 7
+block13 = mobile_block(block12, 512, 1024, 2)    # 14
+block14 = mobile_block(block13, 1024, 1024, 1)   # 7
 
-pool   = tf.nn.avg_pool(block11, ksize=[1,7,7,1], strides=[1,7,7,1], padding='SAME')
-flat   = tf.contrib.layers.flatten(pool)
-fc1    = tf.layers.dense(inputs=flat, units=1000)
+pool   = tf.nn.avg_pool(block14, ksize=[1,7,7,1], strides=[1,7,7,1], padding='SAME')
+flat   = tf.reshape(pool, [batch_size, 1024])
+
+mat1   = tf.Variable(init_matrix(size=(1024, 1000), init='alexnet'), dtype=tf.float32)
+bias1  = tf.Variable(np.zeros(shape=1000), dtype=tf.float32)
+fc1    = tf.matmul(flat, mat1) + bias1
 
 ###############################################################
 
