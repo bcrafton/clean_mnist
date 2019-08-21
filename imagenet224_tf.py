@@ -17,7 +17,7 @@ if args.gpu >= 0:
     os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"
     os.environ["CUDA_VISIBLE_DEVICES"]=str(args.gpu)
 
-exxact = 0
+exxact = 1
 if exxact:
     val_path = '/home/bcrafton3/Data_SSD/ILSVRC2012/val/'
     train_path = '/home/bcrafton3/Data_SSD/ILSVRC2012/train/'
@@ -35,10 +35,10 @@ import tensorflow as tf
 import numpy as np
 np.set_printoptions(threshold=1000)
 
-from utils.conv_utils import conv_output_length
-from utils.conv_utils import conv_input_length
+from bc_utils.conv_utils import conv_output_length
+from bc_utils.conv_utils import conv_input_length
 
-from utils.init_tensor import init_filters
+from bc_utils.init_tensor import init_filters
 
 ##############################################
 
