@@ -17,7 +17,7 @@ if args.gpu >= 0:
     os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"
     os.environ["CUDA_VISIBLE_DEVICES"]=str(args.gpu)
 
-exxact = 1
+exxact = 0
 if exxact:
     val_path = '/home/bcrafton3/Data_SSD/ILSVRC2012/val/'
     train_path = '/home/bcrafton3/Data_SSD/ILSVRC2012/train/'
@@ -36,6 +36,7 @@ import numpy as np
 np.set_printoptions(threshold=1000)
 
 from keras.layers import DepthwiseConv2D, Conv2D, BatchNormalization, AveragePooling2D, Dense, Flatten, ReLU, Softmax
+from keras.models import Model
 
 ##############################################
 
@@ -231,36 +232,44 @@ def mobile_block(x, f1, f2, s):
 
     return relu2
 
+def create_model(input_shape, classes)
+    inputs = Input(shape=input_shape)
+
+    bn     = BatchNormalization()(inputs)          # 224
+    block1 = block(bn,              32,         2) # 224
+
+    block2 = mobile_block(block1,   32,   64,   1) # 112
+    block3 = mobile_block(block2,   64,   128,  2) # 112
+
+    block4 = mobile_block(block3,   128,  128,  1) # 56
+    block5 = mobile_block(block4,   128,  256,  2) # 56
+
+    block6 = mobile_block(block5,   256,  256,  1) # 28
+    block7 = mobile_block(block6,   256,  512,  2) # 28
+
+    block8  = mobile_block(block7,  512,  512,  1) # 14
+    block9  = mobile_block(block8,  512,  512,  1) # 14
+    block10 = mobile_block(block9,  512,  512,  1) # 14
+    block11 = mobile_block(block10, 512,  512,  1) # 14
+    block12 = mobile_block(block11, 512,  512,  1) # 14
+
+    block13 = mobile_block(block12, 512,  1024, 2) # 14
+    block14 = mobile_block(block13, 1024, 1024, 1) # 7
+
+    pool    = AveragePooling2D(pool_size=[7,7], padding='same')(block14)
+    flat    = Flatten()(pool)
+    fc1     = Dense(units=classes)(flat)
+
+    model = Model(inputs=inputs, outputs=fc1)
+    return model
+
 ###############################################################
 
 batch_size = tf.placeholder(tf.int32, shape=())
 lr = tf.placeholder(tf.float32, shape=())
 
-bn     = BatchNormalization()(features)        # 224
-block1 = block(bn,              32,         2) # 224
-
-block2 = mobile_block(block1,   32,   64,   1) # 112
-block3 = mobile_block(block2,   64,   128,  2) # 112
-
-block4 = mobile_block(block3,   128,  128,  1) # 56
-block5 = mobile_block(block4,   128,  256,  2) # 56
-
-block6 = mobile_block(block5,   256,  256,  1) # 28
-block7 = mobile_block(block6,   256,  512,  2) # 28
-
-block8  = mobile_block(block7,  512,  512,  1) # 14
-block9  = mobile_block(block8,  512,  512,  1) # 14
-block10 = mobile_block(block9,  512,  512,  1) # 14
-block11 = mobile_block(block10, 512,  512,  1) # 14
-block12 = mobile_block(block11, 512,  512,  1) # 14
-
-block13 = mobile_block(block12, 512,  1024, 2) # 14
-block14 = mobile_block(block13, 1024, 1024, 1) # 7
-
-pool    = AveragePooling2D(pool_size=[7,7], padding='same')(block14)
-flat    = Flatten()(pool)
-fc1     = Dense(units=1000)(flat)
-predict = Softmax()(fc1)
+model = create_model(input_shape=[batch_size, 224, 224, 3], classes=1000)
+model.compile(loss=keras.losses.categorical_crossentropy, optimizer=keras.optimizers.Adam(lr=0.01, beta_1=0.9, beta_2=0.999, epsilon=1.0), metrics=['accuracy'])
 
 ###############################################################
 
@@ -283,62 +292,7 @@ val_handle = sess.run(val_iterator.string_handle())
 
 ###############################################################
 
-'''
-[params] = sess.run([params], feed_dict={})
-for p in params:
-    print (np.shape(p))
-assert (False)
-'''
 
-###############################################################
-
-for ii in range(args.epochs):
-
-    print('epoch %d/%d' % (ii, args.epochs))
-
-    ##################################################################
-
-    sess.run(train_iterator.initializer, feed_dict={filename: train_imgs, label: train_labs})
-
-    train_total = 0.0
-    train_correct = 0.0
-    train_acc = 0.0
-
-    for jj in range(0, len(train_imgs), args.batch_size):
-
-        [_total_correct, _] = sess.run([total_correct, train], feed_dict={handle: train_handle, batch_size: args.batch_size, lr: args.lr})
-
-        train_total += args.batch_size
-        train_correct += _total_correct
-        train_acc = train_correct / train_total
-
-        if (jj % (100 * args.batch_size) == 0):
-            p = "train accuracy: %f" % (train_acc)
-            print (p)
-
-    ##################################################################
-
-    sess.run(val_iterator.initializer, feed_dict={filename: val_imgs, label: val_labs})
-
-    val_total = 0.0
-    val_correct = 0.0
-    val_acc = 0.0
-
-    for jj in range(0, len(val_imgs), args.batch_size):
-
-        [_total_correct] = sess.run([total_correct], feed_dict={handle: val_handle, batch_size: args.batch_size, lr: 0.0})
-
-        val_total += args.batch_size
-        val_correct += _total_correct
-        val_acc = val_correct / val_total
-
-        if (jj % (100 * args.batch_size) == 0):
-            p = "val accuracy: %f" % (val_acc)
-            print (p)
-    
-    
-    
-    
     
     
     
