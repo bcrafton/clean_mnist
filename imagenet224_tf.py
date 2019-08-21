@@ -17,7 +17,7 @@ if args.gpu >= 0:
     os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"
     os.environ["CUDA_VISIBLE_DEVICES"]=str(args.gpu)
 
-exxact = 1
+exxact = 0
 if exxact:
     val_path = '/home/bcrafton3/Data_SSD/ILSVRC2012/val/'
     train_path = '/home/bcrafton3/Data_SSD/ILSVRC2012/train/'
@@ -34,6 +34,11 @@ import keras
 import tensorflow as tf
 import numpy as np
 np.set_printoptions(threshold=1000)
+
+from utils.conv_utils import conv_output_length
+from utils.conv_utils import conv_input_length
+
+from utils.init_tensor import init_filters
 
 ##############################################
 
@@ -202,16 +207,26 @@ val_iterator = val_dataset.make_initializable_iterator()
 
 ###############################################################
 
-def block(x, f, p):
+def block(x, f):
     conv = tf.layers.conv2d(inputs=x, filters=f, kernel_size=[3, 3], strides=[1, 1], padding='same', use_bias=False)
     bn   = tf.layers.batch_normalization(conv)
     relu = tf.nn.relu(bn)
+    return relu
 
-    if p > 1:
-        pool = tf.nn.avg_pool(relu, ksize=[1,p,p,1], strides=[1,p,p,1], padding='SAME')
-        return pool
-    else:
-        return relu
+
+def mobile_block(x, f1, f2, p):
+    filter1 = tf.Variable(init_filters(size=[3,3,f1,1], init='glorot_uniform'), dtype=tf.float32)
+    filter2 = tf.Variable(init_filters(size=[1,1,f1,f2], init='glorot_uniform'), dtype=tf.float32)
+
+    conv1 = tf.nn.depthwise_conv2d(x, filter1, [1,p,p,1], 'SAME')
+    bn1   = tf.layers.batch_normalization(conv1)
+    relu1 = tf.nn.relu(bn1)
+
+    conv2 = tf.nn.conv2d(relu1, filter2, [1,1,1,1], 'SAME')
+    bn2   = tf.layers.batch_normalization(conv2)
+    relu2 = tf.nn.relu(bn2)
+
+    return relu2
 
 ###############################################################
 
@@ -220,22 +235,22 @@ lr = tf.placeholder(tf.float32, shape=())
 
 bn     = tf.layers.batch_normalization(features) # 224
 
-block1 = block(bn, 64, 1)                        # 224
-block2 = block(block1, 64, 2)                    # 224
+block1 = block(bn, 32)                           # 224
+block2 = mobile_block(block1, 32, 64, 2)         # 224
 
-block3 = block(block2, 128, 1)                   # 112
-block4 = block(block3, 128, 2)                   # 112
+block3 = mobile_block(block2, 64, 128, 1)        # 112
+block4 = mobile_block(block3, 128, 128, 2)       # 112
 
-block5 = block(block4, 256, 1)                   # 56
-block6 = block(block5, 256, 2)                   # 56
+block5 = mobile_block(block4, 128, 256, 1)       # 56
+block6 = mobile_block(block5, 256, 256, 2)       # 56
 
-block7 = block(block6, 256, 1)                   # 28
-block8 = block(block7, 256, 2)                   # 28
+block7 = mobile_block(block6, 256, 256, 1)       # 28
+block8 = mobile_block(block7, 256, 256, 2)       # 28
 
-block9 = block(block8, 512, 1)                   # 14
-block10 = block(block9, 512, 2)                  # 14
+block9 = mobile_block(block8, 256, 512, 1)       # 14
+block10 = mobile_block(block9, 512, 512, 2)      # 14
 
-block11 = block(block10, 1024, 1)                # 7
+block11 = mobile_block(block10, 512, 1024, 1)    # 7
 
 pool   = tf.nn.avg_pool(block11, ksize=[1,7,7,1], strides=[1,7,7,1], padding='SAME')
 flat   = tf.contrib.layers.flatten(pool)
@@ -243,12 +258,10 @@ fc1    = tf.layers.dense(inputs=flat, units=1000)
 
 ###############################################################
 
-loss = tf.nn.softmax_cross_entropy_with_logits_v2(logits=fc1, labels=labels) / args.batch_size
+loss = tf.nn.softmax_cross_entropy_with_logits_v2(logits=fc1, labels=labels)
 correct = tf.equal(tf.argmax(fc1, axis=1), tf.argmax(labels, 1))
 total_correct = tf.reduce_sum(tf.cast(correct, tf.float32))
 train = tf.train.AdamOptimizer(learning_rate=lr, epsilon=args.eps).minimize(loss)
-
-params = tf.trainable_variables()
 
 ###############################################################
 
@@ -259,15 +272,6 @@ sess.run(tf.global_variables_initializer())
 
 train_handle = sess.run(train_iterator.string_handle())
 val_handle = sess.run(val_iterator.string_handle())
-
-###############################################################
-
-'''
-[params] = sess.run([params], feed_dict={})
-for p in params:
-    print (np.shape(p))
-assert (False)
-'''
 
 ###############################################################
 
