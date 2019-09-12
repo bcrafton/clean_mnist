@@ -35,14 +35,16 @@ def drelu(x):
 (x_train, y_train), (x_test, y_test) = keras.datasets.mnist.load_data()
 
 y_train = keras.utils.to_categorical(y_train, 10)
-x_train = x_train.reshape(TRAIN_EXAMPLES, 784)
-x_train = x_train.astype('float32')
-x_train = x_train / np.max(x_train)
+assert(np.shape(x_train) == (TRAIN_EXAMPLES, 28, 28))
+x_train = np.reshape(x_train, (TRAIN_EXAMPLES, 28*28))
+x_train = x_train / 255.
+x_train = x_train - np.mean(x_train, axis=0, keepdims=True)
 
 y_test = keras.utils.to_categorical(y_test, 10)
-x_test = x_test.reshape(TEST_EXAMPLES, 784)
-x_test = x_test.astype('float32')
-x_test = x_test / np.max(x_test)
+assert(np.shape(x_test) == (TEST_EXAMPLES, 28, 28))
+x_test = np.reshape(x_test, (TEST_EXAMPLES, 28*28))
+x_test = x_test / 255.
+x_test = x_test - np.mean(x_test, axis=0, keepdims=True)
 
 #######################################
 
@@ -56,8 +58,8 @@ weights2 = tf.Variable(weights2_init, dtype=tf.float32)
 
 #######################################
 
-X = tf.placeholder(tf.float32, [None, 784])
-Y = tf.placeholder(tf.float32, [None, 10])
+X = tf.placeholder(tf.float32, [args.batch_size, 784])
+Y = tf.placeholder(tf.float32, [args.batch_size, 10])
 
 A1 = X
 Z2 = tf.matmul(A1, weights1)
@@ -65,7 +67,7 @@ A2 = relu(Z2)
 Z3 = tf.matmul(A2, weights2)
 A3 = softmax(Z3)
 
-E = tf.subtract(A3, Y)
+E = A3 - Y
 
 D3 = E
 D2 = tf.matmul(D3, tf.transpose(weights2)) * drelu(A2)
@@ -73,8 +75,8 @@ D2 = tf.matmul(D3, tf.transpose(weights2)) * drelu(A2)
 DW2 = tf.matmul(tf.transpose(A2), D3) 
 DW1 = tf.matmul(tf.transpose(A1), D2)  
 
-train2 = weights2 - args.lr * DW2
-train1 = weights1 - args.lr * DW1
+train2 = weights2.assign(weights2 - args.lr * DW2)
+train1 = weights1.assign(weights1 - args.lr * DW1)
 
 correct = tf.equal(tf.argmax(A3,1), tf.argmax(Y,1))
 total_correct = tf.reduce_sum(tf.cast(correct, tf.float32))
