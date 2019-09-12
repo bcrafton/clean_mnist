@@ -12,6 +12,7 @@ parser.add_argument('--batch_size', type=int, default=32)
 parser.add_argument('--lr', type=float, default=3e-3)
 parser.add_argument('--eps', type=float, default=1.)
 parser.add_argument('--gpu', type=int, default=0)
+parser.add_argument('--name', type=str, default='MobileNet224_weights')
 args = parser.parse_args()
 
 if args.gpu >= 0:
@@ -44,7 +45,16 @@ from bc_utils.init_tensor import init_matrix
 
 ##############################################
 
-IMAGENET_MEAN = [123.68, 116.78, 103.94]
+def write(text):
+    print (text)
+    f = open(args.name + '.results', "a")
+    f.write(text + "\n")
+    f.close()
+
+##############################################
+
+# IMAGENET_MEAN = [123.68, 116.78, 103.94]
+IMAGENET_MEAN = [0., 0., 0.]
 
 ##############################################
 
@@ -302,7 +312,7 @@ assert (False)
 '''
 
 [w] = sess.run([weights], feed_dict={})
-np.save('MobileNet224_weights', w)
+np.save(args.name, w)
 
 ###############################################################
 
@@ -328,7 +338,7 @@ for ii in range(args.epochs):
 
         if (jj % (100 * args.batch_size) == 0):
             p = "train accuracy: %f" % (train_acc)
-            print (p)
+            write (p)
 
     ##################################################################
 
@@ -348,10 +358,12 @@ for ii in range(args.epochs):
 
         if (jj % (100 * args.batch_size) == 0):
             p = "val accuracy: %f" % (val_acc)
-            print (p)
+            write (p)
     
     [w] = sess.run([weights], feed_dict={})
-    np.save('MobileNet224_weights', w)
+    w['train_acc'] = train_acc
+    w['val_acc'] = val_acc
+    np.save(args.name, w)
        
     
     
