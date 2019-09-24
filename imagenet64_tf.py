@@ -121,6 +121,7 @@ val_iterator = val_dataset.make_initializable_iterator()
 
 ###############################################################
 
+'''
 def block(x, filter_size, pool_size):
     conv1 = tf.layers.conv2d(inputs=x, filters=filter_size, kernel_size=[3, 3], padding='same')
     bn1   = tf.layers.batch_normalization(conv1)
@@ -133,6 +134,21 @@ def block(x, filter_size, pool_size):
     pool = tf.layers.max_pooling2d(inputs=relu2, pool_size=[pool_size, pool_size], strides=pool_size, padding='same')
 
     return pool
+'''
+
+def block(x, f1, f2, p, name):
+    filters1 = tf.Variable(init_filters(size=[3,3,f1,f2], init='alexnet'), dtype=tf.float32, name=name+'_conv_dw')
+    filters2 = tf.Variable(init_filters(size=[3,3,f2,f2], init='alexnet'), dtype=tf.float32, name=name+'_conv_pw')
+
+    conv1 = tf.nn.depthwise_conv2d(x, filters1, [1,p,p,1], 'SAME')
+    bn1   = batch_norm(conv1, f1, name+'_bn_dw')
+    relu1 = tf.nn.relu(bn1)
+
+    conv2 = tf.nn.conv2d(relu1, filters2, [1,1,1,1], 'SAME')
+    bn2   = batch_norm(conv2, f2, name+'_bn_pw')
+    relu2 = tf.nn.relu(bn2)
+
+    return relu2
 
 ###############################################################
 
@@ -141,11 +157,11 @@ learning_rate = tf.placeholder(tf.float32, shape=())
 
 bn = tf.layers.batch_normalization(features)
 
-block1 = block(bn,      64,  2)
-block2 = block(block1, 128,  2)
-block3 = block(block2, 256,  2)
-block4 = block(block3, 512,  2)
-block5 = block(block4, 1024, 2)
+block1 = block(bn,      3,  64,   2)
+block2 = block(block1, 64,  128,  2)
+block3 = block(block2, 128, 256,  2)
+block4 = block(block3, 256, 512,  2)
+block5 = block(block4, 512, 1024, 2)
 
 flat = tf.contrib.layers.flatten(block5)
 fc1 = tf.layers.dense(inputs=flat, units=1000)
