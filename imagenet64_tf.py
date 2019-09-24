@@ -18,7 +18,7 @@ if args.gpu >= 0:
     os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"
     os.environ["CUDA_VISIBLE_DEVICES"]=str(args.gpu)
 
-exxact = 1
+exxact = 0
 if exxact:
     val_path = '/home/bcrafton3/Data_SSD/64x64/tfrecord/val/'
     train_path = '/home/bcrafton3/Data_SSD/64x64/tfrecord/train/'
@@ -32,6 +32,11 @@ import keras
 import tensorflow as tf
 import numpy as np
 np.set_printoptions(threshold=1000)
+
+from bc_utils.init_tensor import init_filters
+from bc_utils.init_tensor import init_matrix
+
+MEAN = [122.77093945, 116.74601272, 104.09373519]
 
 ##############################################
 
@@ -82,6 +87,9 @@ def extract_fn(record):
     image = tf.cast(image, dtype=tf.float32)
     image = tf.reshape(image, (1, 64, 64, 3))
 
+    means = tf.reshape(tf.constant(MEAN), [1, 1, 1, 3])
+    image = (image - means) / 255. * 2.
+
     label = sample['label']
     return [image, label]
 
@@ -121,50 +129,47 @@ val_iterator = val_dataset.make_initializable_iterator()
 
 ###############################################################
 
-'''
-def block(x, filter_size, pool_size):
-    conv1 = tf.layers.conv2d(inputs=x, filters=filter_size, kernel_size=[3, 3], padding='same')
-    bn1   = tf.layers.batch_normalization(conv1)
-    relu1 = tf.nn.relu(bn1)
-
-    conv2 = tf.layers.conv2d(inputs=relu1, filters=filter_size, kernel_size=[3, 3], padding='same')
-    bn2   = tf.layers.batch_normalization(conv2)
-    relu2 = tf.nn.relu(bn2)
-
-    pool = tf.layers.max_pooling2d(inputs=relu2, pool_size=[pool_size, pool_size], strides=pool_size, padding='same')
-
-    return pool
-'''
+def batch_norm(x, f, name):
+    gamma = tf.Variable(np.ones(shape=f), dtype=tf.float32, name=name+'_gamma')
+    beta = tf.Variable(np.zeros(shape=f), dtype=tf.float32, name=name+'_beta')
+    mean = tf.reduce_mean(x, axis=[0,1,2])
+    _, var = tf.nn.moments(x - mean, axes=[0,1,2])
+    bn = tf.nn.batch_normalization(x=x, mean=mean, variance=var, offset=beta, scale=gamma, variance_epsilon=1e-3)
+    return bn
 
 def block(x, f1, f2, p, name):
-    filters1 = tf.Variable(init_filters(size=[3,3,f1,f2], init='alexnet'), dtype=tf.float32, name=name+'_conv_dw')
-    filters2 = tf.Variable(init_filters(size=[3,3,f2,f2], init='alexnet'), dtype=tf.float32, name=name+'_conv_pw')
+    filters1 = tf.Variable(init_filters(size=[3,3,f1,f2], init='alexnet'), dtype=tf.float32, name=name+'_conv1')
+    filters2 = tf.Variable(init_filters(size=[3,3,f2,f2], init='alexnet'), dtype=tf.float32, name=name+'_conv2')
 
-    conv1 = tf.nn.depthwise_conv2d(x, filters1, [1,p,p,1], 'SAME')
-    bn1   = batch_norm(conv1, f1, name+'_bn_dw')
+    conv1 = tf.nn.conv2d(x, filters1, [1,1,1,1], 'SAME')
+    bn1   = batch_norm(conv1, f2, name+'_bn1')
     relu1 = tf.nn.relu(bn1)
 
     conv2 = tf.nn.conv2d(relu1, filters2, [1,1,1,1], 'SAME')
-    bn2   = batch_norm(conv2, f2, name+'_bn_pw')
+    bn2   = batch_norm(conv2, f2, name+'_bn2')
     relu2 = tf.nn.relu(bn2)
 
-    return relu2
+    pool = tf.nn.avg_pool(relu2, ksize=[1,p,p,1], strides=[1,p,p,1], padding='SAME')
+
+    return pool
 
 ###############################################################
 
 dropout_rate = tf.placeholder(tf.float32, shape=())
 learning_rate = tf.placeholder(tf.float32, shape=())
 
-bn = tf.layers.batch_normalization(features)
+block1 = block(features, 3,  64,   2, 'block1')                                      # 64
+block2 = block(block1,   64,  128,  2, 'block2')                                     # 32
+block3 = block(block2,   128, 256,  2, 'block3')                                     # 16
+block4 = block(block3,   256, 512,  2, 'block4')                                     # 8
+block5 = block(block4,   512, 1024, 1, 'block5')                                     # 4
+pool   = tf.nn.avg_pool(block5, ksize=[1,4,4,1], strides=[1,4,4,1], padding='SAME')  # 1
 
-block1 = block(bn,      3,  64,   2)
-block2 = block(block1, 64,  128,  2)
-block3 = block(block2, 128, 256,  2)
-block4 = block(block3, 256, 512,  2)
-block5 = block(block4, 512, 1024, 2)
+flat   = tf.reshape(pool, [args.batch_size, 1024])
 
-flat = tf.contrib.layers.flatten(block5)
-fc1 = tf.layers.dense(inputs=flat, units=1000)
+mat1   = tf.Variable(init_matrix(size=(1024, 1000), init='alexnet'), dtype=tf.float32, name='fc1')
+bias1  = tf.Variable(np.zeros(shape=1000), dtype=tf.float32, name='fc1_bias')
+fc1    = tf.matmul(flat, mat1) + bias1
 
 ###############################################################
 
