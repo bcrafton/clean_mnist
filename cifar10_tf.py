@@ -54,27 +54,29 @@ def block(x, f1, f2, p, name):
 
     return pool
 
+def dense(x, size, name):
+    input_size, output_size = size
+    w = tf.Variable(init_matrix(size=size, init='alexnet'), dtype=tf.float32, name=name)
+    b  = tf.Variable(np.zeros(shape=output_size), dtype=tf.float32, name=name+'_bias')
+    fc = tf.matmul(x, w) + b
+    return fc
+
 ####################################
 
 block1 = block(x,       3, 32,  2, 'block1') # 32 -> 16
 block2 = block(block1, 32, 64,  2, 'block2') # 16 -> 8
 block3 = block(block2, 64, 128, 2, 'block3') #  8 -> 4
-
 pool   = tf.nn.avg_pool(block3, ksize=[1,4,4,1], strides=[1,4,4,1], padding='SAME')  # 4 -> 1
-
 flat   = tf.reshape(pool, [batch_size, 128])
-
-mat1   = tf.Variable(init_matrix(size=(128, 10), init='alexnet'), dtype=tf.float32, name='fc1')
-bias1  = tf.Variable(np.zeros(shape=10), dtype=tf.float32, name='fc1_bias')
-fc1    = tf.matmul(flat, mat1) + bias1
+out    = dense(flat, [128, 10], 'fc1')
 
 ####################################
 
-predict = tf.argmax(fc1, axis=1)
+predict = tf.argmax(out, axis=1)
 correct = tf.equal(predict, tf.argmax(y, 1))
 sum_correct = tf.reduce_sum(tf.cast(correct, tf.float32))
 
-loss = tf.nn.softmax_cross_entropy_with_logits_v2(labels=y, logits=fc1)
+loss = tf.nn.softmax_cross_entropy_with_logits_v2(labels=y, logits=out)
 params = tf.trainable_variables()
 grads = tf.gradients(loss, params)
 grads_and_vars = zip(grads, params)
