@@ -108,15 +108,15 @@ for ii in range(epochs):
         ys = y_test[s:e]
         _sum_correct = sess.run(sum_correct, feed_dict={x: xs, y: ys})
         total_correct += _sum_correct
-            
+
+    '''
     param = sess.run(params, feed_dict={})
 
-    '''
     for p in param:
       print (np.shape(p))
-    '''
 
     np.save('cifar10_weights', param)       
+    '''
   
     print ("acc: " + str(total_correct * 1.0 / 10000))
         
