@@ -13,6 +13,9 @@ parser.add_argument('--lr', type=float, default=1e-2)
 parser.add_argument('--eps', type=float, default=1.)
 parser.add_argument('--gpu', type=int, default=0)
 
+# goff should have no impact on accuracy!!!
+# Wx = 1000 * (((1/1000)W)x)
+# just add a scale!!!
 parser.add_argument('--goff', type=float, default=0.001)
 parser.add_argument('--ratio', type=float, default=100.)
 args = parser.parse_args()
