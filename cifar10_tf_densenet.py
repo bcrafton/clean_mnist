@@ -1,7 +1,7 @@
 
 import os
 os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"
-os.environ["CUDA_VISIBLE_DEVICES"]='0'
+os.environ["CUDA_VISIBLE_DEVICES"]='4'
 
 ####################################
 
@@ -29,7 +29,7 @@ y_test = keras.utils.to_categorical(y_test, 10)
 ####################################
 
 epochs = 10
-batch_size = 8
+batch_size = 50
 x = tf.placeholder(tf.float32, [None, 32 , 32 , 3])
 y = tf.placeholder(tf.float32, [None, 10])
 
@@ -126,7 +126,7 @@ sess.run(tf.global_variables_initializer())
 ####################################
 
 for ii in range(epochs):
-    for jj in range(0, 10 * batch_size, batch_size):
+    for jj in range(0, 50000, batch_size):
         s = jj
         e = jj + batch_size
         xs = x_train[s:e]
@@ -135,7 +135,7 @@ for ii in range(epochs):
         
     total_correct = 0
 
-    for jj in range(0, 10 * batch_size, batch_size):
+    for jj in range(0, 10000, batch_size):
         s = jj
         e = jj + batch_size
         xs = x_test[s:e]
@@ -143,16 +143,9 @@ for ii in range(epochs):
         _sum_correct = sess.run(sum_correct, feed_dict={x: xs, y: ys})
         total_correct += _sum_correct
 
+    '''
     param = sess.run(vars_dict, feed_dict={})
     print (param.keys())
-
-    '''
-    param = sess.run(params, feed_dict={})
-
-    for p in param:
-      print (np.shape(p))
-
-    np.save('cifar10_weights', param)       
     '''
   
     print ("acc: " + str(total_correct * 1.0 / 10000))
