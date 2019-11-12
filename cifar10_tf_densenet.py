@@ -6,10 +6,11 @@ import sys
 ##############################################
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--epochs', type=int, default=100)
+parser.add_argument('--epochs', type=int, default=5)
 parser.add_argument('--batch_size', type=int, default=50)
 parser.add_argument('--lr', type=float, default=1e-2)
 parser.add_argument('--gpu', type=int, default=2)
+parser.add_argument('--blocks', type=int, default=4)
 args = parser.parse_args()
 
 if args.gpu >= 0:
@@ -120,7 +121,7 @@ def dense_model(x, xshape, k, block_sizes, name, vars_dict):
         block_size = block_sizes[ii]
         for jj in range(block_size):
             nfmap = c + k * (sum(block_sizes[0:ii]) + jj)
-            block = dense_block(concat(blocks), nfmap, k, name + '_block%d' % (nfmap), vars_dict) # block_ii_jj -> ii can equal jj
+            block = dense_block(concat(blocks), nfmap, k, name + '_block_%d_%d' % (ii, jj), vars_dict)
             blocks.append(block)
 
         pool = tf.nn.avg_pool(concat(blocks), ksize=[1,2,2,1], strides=[1,2,2,1], padding='SAME')
@@ -130,14 +131,19 @@ def dense_model(x, xshape, k, block_sizes, name, vars_dict):
 
 ####################################
 
-block_sizes = [4, 4, 4, 4]
+block_sizes = [0, 0, 0, 0]
+for ii in range(args.blocks):
+    block_sizes[ii] = 4
+
 k = 32
 nhidden = 3 + k * sum(block_sizes)
 
 try:
     vars_dict = np.load('cifar10_densenet.npy', allow_pickle=True).item()
+    print ('loaded weights: %d' % (len(vars_dict.keys())))
 except:
     vars_dict = {}
+    print ('no weights found!')
 
 dense = dense_model(x, [args.batch_size, 32, 32, 3], k, block_sizes, 'dense', vars_dict)
 pool  = tf.nn.avg_pool(dense, ksize=[1,2,2,1], strides=[1,2,2,1], padding='SAME') # 4 -> 1
@@ -163,6 +169,10 @@ config.gpu_options.allow_growth=True
 sess = tf.Session(config=config)
 sess.run(tf.global_variables_initializer())
 
+####################################
+
+# make better notes, throw them at the top of code.
+
 # need to stuff all this stuff into a function.
 
 # can we call sess.end() or something like that ? 
@@ -174,6 +184,8 @@ sess.run(tf.global_variables_initializer())
 # yeah but then we cant just make something trainable=False
 # wud have to intelligently pick which to train.
 # might be best to just run a new python script each time.
+
+# we ended up just calling script every time and saving vars.
 
 ####################################
 
