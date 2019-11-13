@@ -1,22 +1,36 @@
 
-
 import argparse
 import os
 import sys
 
 ##############################################
 
+# might want to try something like this.
+# https://www.tensorflow.org/guide/distributed_training
+
 parser = argparse.ArgumentParser()
-parser.add_argument('--epochs', type=int, default=10)
-parser.add_argument('--batch_size', type=int, default=64)
+parser.add_argument('--epochs', type=int, default=5)
+parser.add_argument('--batch_size', type=int, default=128)
 parser.add_argument('--lr', type=float, default=1e-2)
-parser.add_argument('--eps', type=float, default=1.)
-parser.add_argument('--gpu', type=int, default=0)
+parser.add_argument('--gpu', type=str, default='2,3,4')
+parser.add_argument('--blocks', type=int, default=4)
+parser.add_argument('--name', type=str, default='imagenet64')
 args = parser.parse_args()
 
-if args.gpu >= 0:
-    os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"
-    os.environ["CUDA_VISIBLE_DEVICES"]=str(args.gpu)
+os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"
+os.environ["CUDA_VISIBLE_DEVICES"]=args.gpu
+
+##############################################
+
+def get_available_devices():
+    from tensorflow.python.client import device_lib
+    local_device_protos = device_lib.list_local_devices()
+    return [x.name for x in local_device_protos]
+
+print (get_available_devices())
+# assert (False)
+
+##############################################
 
 exxact = 0
 if exxact:
@@ -39,7 +53,13 @@ from bc_utils.init_tensor import init_matrix
 
 MEAN = [122.77093945, 116.74601272, 104.09373519]
 
-##############################################
+####################################
+
+def log(filename, content):
+    print (content)
+    f = open(filename, 'a')
+    f.write(content + '\n')
+    f.close()
 
 def parse_function(filename, label):
     conv = tf.read_file(filename)
@@ -94,7 +114,7 @@ def extract_fn(record):
     label = sample['label']
     return [image, label]
 
-###############################################################
+####################################
 
 train_filenames = get_train_filenames()
 val_filenames = get_val_filenames()
@@ -128,59 +148,127 @@ labels = tf.one_hot(labels, depth=1000)
 train_iterator = train_dataset.make_initializable_iterator()
 val_iterator = val_dataset.make_initializable_iterator()
 
-###############################################################
+####################################
 
-def batch_norm(x, f, name):
-    gamma = tf.Variable(np.ones(shape=f), dtype=tf.float32, name=name+'_gamma')
-    beta = tf.Variable(np.zeros(shape=f), dtype=tf.float32, name=name+'_beta')
+def batch_norm(x, f, name, vars_dict):
+
+    gamma_name = name + '_gamma'
+    beta_name = name + '_beta'
+
+    if gamma_name in vars_dict.keys():
+        gamma = tf.Variable(vars_dict[gamma_name], trainable=False, dtype=tf.float32)
+    else:
+        gamma = tf.Variable(np.ones(shape=f), dtype=tf.float32)
+
+    if beta_name in vars_dict.keys():
+        beta = tf.Variable(vars_dict[beta_name], trainable=False, dtype=tf.float32)
+    else:
+        beta = tf.Variable(np.zeros(shape=f), dtype=tf.float32)
+
+    vars_dict[gamma_name] = gamma
+    vars_dict[beta_name] = beta
+
+    ########################################
+
     mean = tf.reduce_mean(x, axis=[0,1,2])
     _, var = tf.nn.moments(x - mean, axes=[0,1,2])
     bn = tf.nn.batch_normalization(x=x, mean=mean, variance=var, offset=beta, scale=gamma, variance_epsilon=1e-3)
     return bn
 
-def block(x, f1, f2, p, name):
-    filters1 = tf.Variable(init_filters(size=[3,3,f1,f2], init='alexnet'), dtype=tf.float32, name=name+'_conv1')
-    filters2 = tf.Variable(init_filters(size=[3,3,f2,f2], init='alexnet'), dtype=tf.float32, name=name+'_conv2')
+def conv_block(x, f, name, vars_dict):
 
-    conv1 = tf.nn.conv2d(x, filters1, [1,1,1,1], 'SAME')
-    bn1   = batch_norm(conv1, f2, name+'_bn1')
-    relu1 = tf.nn.relu(bn1)
+    if name in vars_dict.keys():
+        filters = tf.Variable(vars_dict[name], trainable=False, dtype=tf.float32)
+    else:
+        filters = tf.Variable(init_filters(size=f, init='alexnet'), dtype=tf.float32)
 
-    conv2 = tf.nn.conv2d(relu1, filters2, [1,1,1,1], 'SAME')
-    bn2   = batch_norm(conv2, f2, name+'_bn2')
-    relu2 = tf.nn.relu(bn2)
+    vars_dict[name] = filters
 
-    pool = tf.nn.avg_pool(relu2, ksize=[1,p,p,1], strides=[1,p,p,1], padding='SAME')
+    ##################################
 
-    return pool
+    fh, fw, fc, fo = f
 
-###############################################################
+    conv = tf.nn.conv2d(x, filters, [1,1,1,1], 'SAME')
+    bn   = batch_norm(conv, fo, name, vars_dict)
+    relu = tf.nn.relu(bn)
 
-dropout_rate = tf.placeholder(tf.float32, shape=())
-learning_rate = tf.placeholder(tf.float32, shape=())
+    return relu
 
-block1 = block(features, 3,  64,   2, 'block1')                                      # 64
-block2 = block(block1,   64,  128,  2, 'block2')                                     # 32
-block3 = block(block2,   128, 256,  2, 'block3')                                     # 16
-block4 = block(block3,   256, 512,  2, 'block4')                                     # 8
-block5 = block(block4,   512, 1024, 1, 'block5')                                     # 4
-pool   = tf.nn.avg_pool(block5, ksize=[1,4,4,1], strides=[1,4,4,1], padding='SAME')  # 1
+def fc_block(x, size):
+    input_size, output_size = size
+    w = tf.Variable(init_matrix(size=size, init='alexnet'), dtype=tf.float32)
+    b  = tf.Variable(np.zeros(shape=output_size), dtype=tf.float32)
+    fc = tf.matmul(x, w) + b
+    return fc
 
-flat   = tf.reshape(pool, [args.batch_size, 1024])
+####################################
 
-mat1   = tf.Variable(init_matrix(size=(1024, 1000), init='alexnet'), dtype=tf.float32, name='fc1')
-bias1  = tf.Variable(np.zeros(shape=1000), dtype=tf.float32, name='fc1_bias')
-fc1    = tf.matmul(flat, mat1) + bias1
+def concat(blocks):
+    return tf.concat(blocks, axis=3)
 
-###############################################################
+def dense_block(x, nfmap, k, name, vars_dict):
+    conv1 = conv_block(x,     [1,1,nfmap,4*k], name + '_conv1x1', vars_dict)
+    conv2 = conv_block(conv1, [3,3,4*k,k], name + '_conv3x3', vars_dict)
+    return conv2
 
-loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits_v2(logits=fc1, labels=labels))
-correct = tf.equal(tf.argmax(fc1, axis=1), tf.argmax(labels, 1))
-total_correct = tf.reduce_sum(tf.cast(correct, tf.float32))
+def dense_model(x, xshape, k, block_sizes, name, vars_dict):
+    _, _, _, c = xshape
 
-train = tf.train.AdamOptimizer(learning_rate=learning_rate, epsilon=args.eps).minimize(loss)
+    blocks = [x]
+    for ii in range(len(block_sizes)):
+        block_size = block_sizes[ii]
+        block_gpu = block_gpus[ii]
+        with tf.device('/device:GPU:%d' % (block_gpu)):
+            for jj in range(block_size):
+                nfmap = c + k * (sum(block_sizes[0:ii]) + jj)
+                block = dense_block(concat(blocks), nfmap, k, name + '_block_%d_%d' % (ii, jj), vars_dict)
+                blocks.append(block)
 
-###############################################################
+            pool = tf.nn.avg_pool(concat(blocks), ksize=[1,2,2,1], strides=[1,2,2,1], padding='SAME')
+            blocks = [pool]
+
+    return blocks[-1]
+
+####################################
+'''
+block_sizes = [0, 0, 0, 0, 0]
+for ii in range(args.blocks):
+    block_sizes[ii] = 8
+'''
+
+block_gpus  = [0, 0, 1, 1, 2]
+block_sizes = [4, 6, 8, 8, 6]
+
+k = 64
+nhidden = 3 + k * sum(block_sizes)
+
+try:
+    vars_dict = np.load('cifar10_densenet.npy', allow_pickle=True).item()
+    print ('loaded weights: %d' % (len(vars_dict.keys())))
+except:
+    vars_dict = {}
+    print ('no weights found!')
+
+dense = dense_model(features, [args.batch_size, 32, 32, 3], k, block_sizes, 'dense', vars_dict)
+pool  = tf.nn.avg_pool(dense, ksize=[1,2,2,1], strides=[1,2,2,1], padding='SAME') # 4 -> 1
+flat  = tf.reshape(pool, [args.batch_size, nhidden])
+out   = fc_block(flat, [nhidden, 1000])
+
+####################################
+
+predict = tf.argmax(out, axis=1)
+tf_correct = tf.reduce_sum(tf.cast(tf.equal(predict, tf.argmax(labels, 1)), tf.float32))
+
+loss = tf.nn.softmax_cross_entropy_with_logits_v2(labels=labels, logits=out)
+
+# params = tf.trainable_variables()
+# grads = tf.gradients(loss, params)
+# grads_and_vars = zip(grads, params)
+# train = tf.train.AdamOptimizer(learning_rate=args.lr, epsilon=1.).apply_gradients(grads_and_vars)
+
+train = tf.train.AdamOptimizer(learning_rate=args.lr, epsilon=1.).minimize(loss)
+
+####################################
 
 config = tf.ConfigProto(allow_soft_placement=True)
 config.gpu_options.allow_growth=True
@@ -207,16 +295,16 @@ for ii in range(0, args.epochs):
     start = time.time()
     for jj in range(0, len(train_filenames), args.batch_size):
 
-        [_total_correct, _] = sess.run([total_correct, train], feed_dict={handle: train_handle, learning_rate: args.lr})
+        [np_correct, _] = sess.run([tf_correct, train], feed_dict={handle: train_handle})
 
         train_total += args.batch_size
-        train_correct += _total_correct
+        train_correct += np_correct
         train_acc = train_correct / train_total
 
         if (jj % (100 * args.batch_size) == 0):
             img_per_sec = (jj + args.batch_size) / (time.time() - start)
             p = "%d | train accuracy: %f | img/s: %f" % (jj, train_acc, img_per_sec)
-            print (p)
+            log (args.name + '.results', p)
 
     ##################################################################
 
@@ -228,13 +316,27 @@ for ii in range(0, args.epochs):
 
     for jj in range(0, len(val_filenames), args.batch_size):
 
-        [_total_correct] = sess.run([total_correct], feed_dict={handle: val_handle, learning_rate: 0.0})
+        [np_correct] = sess.run([tf_correct], feed_dict={handle: val_handle})
 
         val_total += args.batch_size
-        val_correct += _total_correct
+        val_correct += np_correct
         val_acc = val_correct / val_total
 
         if (jj % (100 * args.batch_size) == 0):
             p = "val accuracy: %f" % (val_acc)
-            print (p)
+            log (args.name + '.results', p)
+
+####################################
+        
+weights = sess.run(vars_dict, feed_dict={})
+np.save('imagenet64_densenet', weights)
+        
+####################################
+
+
+
+
+
+
+
 
