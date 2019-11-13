@@ -221,18 +221,17 @@ except:
     vars_dict = {}
     print ('no weights found!')
 
-dense = dense_model(x, [args.batch_size, 32, 32, 3], k, block_sizes, 'dense', vars_dict)
+dense = dense_model(features, [args.batch_size, 32, 32, 3], k, block_sizes, 'dense', vars_dict)
 pool  = tf.nn.avg_pool(dense, ksize=[1,2,2,1], strides=[1,2,2,1], padding='SAME') # 4 -> 1
 flat  = tf.reshape(pool, [args.batch_size, nhidden])
-out   = fc_block(flat, [nhidden, 10])
+out   = fc_block(flat, [nhidden, 1000])
 
 ####################################
 
 predict = tf.argmax(out, axis=1)
-correct = tf.equal(predict, tf.argmax(y, 1))
-sum_correct = tf.reduce_sum(tf.cast(correct, tf.float32))
+tf_correct = tf.reduce_sum(tf.cast(tf.equal(predict, tf.argmax(labels, 1)), tf.float32))
 
-loss = tf.nn.softmax_cross_entropy_with_logits_v2(labels=y, logits=out)
+loss = tf.nn.softmax_cross_entropy_with_logits_v2(labels=labels, logits=out)
 params = tf.trainable_variables()
 grads = tf.gradients(loss, params)
 grads_and_vars = zip(grads, params)
@@ -264,10 +263,10 @@ for ii in range(0, args.epochs):
 
     for jj in range(0, len(train_filenames), args.batch_size):
 
-        [_total_correct, _] = sess.run([total_correct, train], feed_dict={handle: train_handle, learning_rate: args.lr})
+        [np_correct, _] = sess.run([tf_correct, train], feed_dict={handle: train_handle})
 
         train_total += args.batch_size
-        train_correct += _total_correct
+        train_correct += np_correct
         train_acc = train_correct / train_total
 
         if (jj % (100 * args.batch_size) == 0):
@@ -284,10 +283,10 @@ for ii in range(0, args.epochs):
 
     for jj in range(0, len(val_filenames), args.batch_size):
 
-        [_total_correct] = sess.run([total_correct], feed_dict={handle: val_handle, learning_rate: 0.0})
+        [np_correct] = sess.run([tf_correct], feed_dict={handle: val_handle})
 
         val_total += args.batch_size
-        val_correct += _total_correct
+        val_correct += np_correct
         val_acc = val_correct / val_total
 
         if (jj % (100 * args.batch_size) == 0):
