@@ -6,11 +6,12 @@ import sys
 ##############################################
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--epochs', type=int, default=5)
-parser.add_argument('--batch_size', type=int, default=50)
+parser.add_argument('--epochs', type=int, default=1)
+parser.add_argument('--batch_size', type=int, default=64)
 parser.add_argument('--lr', type=float, default=1e-2)
-parser.add_argument('--gpu', type=int, default=2)
-parser.add_argument('--blocks', type=int, default=4)
+parser.add_argument('--gpu', type=int, default=3)
+parser.add_argument('--blocks', type=int, default=0)
+parser.add_argument('--name', type=str, default='imagenet64')
 args = parser.parse_args()
 
 if args.gpu >= 0:
@@ -30,12 +31,21 @@ else:
 import keras
 import tensorflow as tf
 import numpy as np
+import time
 np.set_printoptions(threshold=1000)
 
 from bc_utils.init_tensor import init_filters
 from bc_utils.init_tensor import init_matrix
 
 MEAN = [122.77093945, 116.74601272, 104.09373519]
+
+####################################
+
+def log(filename, content):
+    print (content)
+    f = open(filename, 'a')
+    f.write(content + "\n")
+    f.close()
 
 ####################################
 
@@ -195,6 +205,7 @@ def dense_model(x, xshape, k, block_sizes, name, vars_dict):
     blocks = [x]
     for ii in range(len(block_sizes)):
         block_size = block_sizes[ii]
+        print ('block_size: %d' % (block_size))
         for jj in range(block_size):
             nfmap = c + k * (sum(block_sizes[0:ii]) + jj)
             block = dense_block(concat(blocks), nfmap, k, name + '_block_%d_%d' % (ii, jj), vars_dict)
@@ -207,15 +218,31 @@ def dense_model(x, xshape, k, block_sizes, name, vars_dict):
 
 ####################################
 
+'''
+if args.blocks == 0:
+    block_sizes = [4, 6, 8, 8, 6]
+elif args.blocks == 1:
+    block_sizes = [8, 12, 16, 16, 12]
+else:
+    assert (False)
+'''
+
+####################################
+
+target_block_sizes = [8, 12, 16, 16, 12]
+
 block_sizes = [0, 0, 0, 0, 0]
 for ii in range(args.blocks):
-    block_sizes[ii] = 8
+    block_sizes[ii] = target_block_sizes[ii]
+
+####################################
 
 k = 32
 nhidden = 3 + k * sum(block_sizes)
+print ('nhidden: %d' % (nhidden))
 
 try:
-    vars_dict = np.load('cifar10_densenet.npy', allow_pickle=True).item()
+    vars_dict = np.load('imagenet64_densenet.npy', allow_pickle=True).item()
     print ('loaded weights: %d' % (len(vars_dict.keys())))
 except:
     vars_dict = {}
@@ -232,10 +259,15 @@ predict = tf.argmax(out, axis=1)
 tf_correct = tf.reduce_sum(tf.cast(tf.equal(predict, tf.argmax(labels, 1)), tf.float32))
 
 loss = tf.nn.softmax_cross_entropy_with_logits_v2(labels=labels, logits=out)
+
 params = tf.trainable_variables()
+'''
 grads = tf.gradients(loss, params)
 grads_and_vars = zip(grads, params)
 train = tf.train.AdamOptimizer(learning_rate=args.lr, epsilon=1.).apply_gradients(grads_and_vars)
+'''
+
+train = tf.train.AdamOptimizer(learning_rate=args.lr, epsilon=1.).minimize(loss)
 
 ####################################
 
@@ -246,6 +278,15 @@ sess.run(tf.global_variables_initializer())
 
 train_handle = sess.run(train_iterator.string_handle())
 val_handle = sess.run(val_iterator.string_handle())
+
+###############################################################
+
+'''
+params = sess.run(params, feed_dict={})
+for p in params:
+    print (np.shape(p))
+assert (False)
+'''
 
 ###############################################################
 
@@ -261,6 +302,7 @@ for ii in range(0, args.epochs):
     train_correct = 0.0
     train_acc = 0.0
 
+    start = time.time()
     for jj in range(0, len(train_filenames), args.batch_size):
 
         [np_correct, _] = sess.run([tf_correct, train], feed_dict={handle: train_handle})
@@ -270,8 +312,9 @@ for ii in range(0, args.epochs):
         train_acc = train_correct / train_total
 
         if (jj % (100 * args.batch_size) == 0):
-            p = "train accuracy: %f" % (train_acc)
-            print (p)
+            img_per_sec = (jj + args.batch_size) / (time.time() - start)
+            p = "%d | train accuracy: %f | img/s: %f" % (jj, train_acc, img_per_sec)
+            log (args.name + '.results', p)
 
     ##################################################################
 
@@ -291,7 +334,7 @@ for ii in range(0, args.epochs):
 
         if (jj % (100 * args.batch_size) == 0):
             p = "val accuracy: %f" % (val_acc)
-            print (p)
+            log (args.name + '.results', p)
 
 ####################################
         
